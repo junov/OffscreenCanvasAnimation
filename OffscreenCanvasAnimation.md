@@ -75,7 +75,7 @@ An alternate solution would be to have commit() return a promise that gets resol
 
 Continuous animation example:
 
-'''
+```
 function animationLoop() {
   // draw stuff
   (...)
@@ -83,11 +83,11 @@ function animationLoop() {
   // do post commit work
   (...)
 }
-'''
+```
 
 Another possibility is to use the async/await syntax:
 
-'''
+```
 async function animationLoop() {
   var promise;
   do {
@@ -98,17 +98,17 @@ async function animationLoop() {
     (...)
   } while (await promise);
 }
-'''
+```
 
 To animate multiple canvases in lock-step, one could do this, for eaxample:
  
-'''
+```
 function animationLoop() {
   // draw stuff
   (...)
   Promise.all([ctx1.commit(), ctx2.commit()]).then(animationLoop);
 }
-'''
+```
 
 For occasional update use cases, it is just a matter of ignoring the promise returned by commit() and to drive the animation using another signal, for example a network event.  In the case where multiple calls to commit are made in the same frame interval, the user agent skips frames in order to avoid accumulating a multi-frame backlog, as described in the processing model below.
 
