@@ -29,15 +29,19 @@ Another solution is to have a requestAnimationFrame loop in the browsing context
 * The the frame rate in the browsing context's event loop may be higher than the worker can keep up which which will require a throttling mechanism to be implemented in script
 * As with setTimeout/setInterval, it is possible for the rendering script to run at a rate that the GPU cannot keep-up with.
 
-## Proposed Solutions
+## Considered Solutions
 
 ### WorkerGlobalScope.requestAnimationFrame
 
-Work in progres...
+This would replicate the behavior of window.requestAnimationFrame, but in a worker.
+
+#### Problems:
+* It is not clear which display device to synchronize with in this context, unlike with the window interface which represents a view that is displayed on a specific display device. In the case of a dedicated worker, we could assume that the display that the worker is connected to is the display of the window of the browsing context that owns the dedicated worker.  For shared workers however, relation to a display is less clear.
+* This approach would require adding the notion of a graphics update phase to the worker event loop processing model. It would be unfortunate to add this complexity to workers, which are not inherently designed for graphics.
 
 ### OffscreenCanvas.requestAnimationFrame
 
-Works much like window.requestAnimationFrame, except that the scheduling of callbacks is independent of the browsing context event loop, and therefore is not necessarily synchronized with graphics updates from the browsing context.
+Works much like window.requestAnimationFrame, except that the scheduling of callbacks is per object. This allows multiple Offscreen canvas objects in the same worker to be synchronized with different displays.  The display that the OffscreenCanvas would synchronize with is the device where its placeholder canvas is displayed.
 
 #### Processing Model
 
@@ -56,22 +60,31 @@ For OffscreenCanvases, the user agent will schedule an "animation task" to run a
 * When the OffscreenCanvas is associated with a VRLayer, all calls to {request|cancel}AnimationFrame must be forwarded to the VRLayer's VRDisplay's {request|cancel}AnimationFrame methods.  This implies that when the OffscreenCanvas simultaneously is visible through a placeholder canvas and a VR device, the animation loop is driven by the VR device.
 * The animations tasks for different OffscreenCanvas objects that live in the same event loop are not necessarily synchronized. 
 
-#### Open issues
+#### Issues
 Calling commit() on a given OffscreenCanvas multiple times in the same animation frame is problematic.  Possible way of handling the situation:
 * Drop all commits but the last one (or the first one?)
 * Queue multiple frames and wait for all of them to have be displayed before scheduling the next animation task
 * Throw an exception
 
-What to do if commit() is not called from within the animation callback?  This is problematic because 
-* Do an implicit commit()
+What to do if commit() is not called from within the animation callback?  This is problematic because the scheduling of the next animation frame is usually queued behing the completion of the current frame. Possible courses of action:
+* Do an implicit commit() at end of script task.
 * Repeat the previous frame
 * Schedule the next animation frame immediately.
 * Prevent this from ever happening: Let OffscreenCanvas object have a needsCommit flag that is initially false. Set needsCommit to true at the beginning of an animation task. Set needsCommit to false when commit is called. When requestAnimationFrame is called, throw an exception if needsCommit is true.
 
 Should it be possible to commit() the contents of other canvases from within a rAF callback? 
 
+The design of requestAnimationFrame was mean to allow multiple independent rendering loops in parallel which is why there is a notion of a callback list.  This aspect of the processing model is overkill in the case where requestAnimationFrame is per-object instead of global.
+
+For new async Web APIs, it is preferred to use Promises rather than callbacks.
+
+## Proposed Solution
+
 ### OffscreenCanvas.commit() to return a promise
-An alternate solution would be to have commit() return a promise that gets resolved when it is time to begin rendering the next frame.  This single API entry-point provides the necessary flexibility to handle continuous animations as well as sporadic updates.
+An alternate solution would be to have commit() return a promise that gets resolved when it is time to begin rendering the next frame.  This single API entry-point provides the necessary flexibility to handle continuous animations as well as sporadic updates.  Functionally, this API solves all the same use cases as OffscreenCanvas.requestAnimationFrame, with the following added benefits:
+* Not possible to schedule an animation frame without comitting (implementation no longers needs to worry about that case).
+* Simpler processing model (no callback queue)
+* The use of promises allows more modern syntaxes and code constructs. For example: async/await.
 
 Continuous animation example:
 
@@ -100,7 +113,7 @@ async function animationLoop() {
 }
 ```
 
-To animate multiple canvases in lock-step, one could do this, for eaxample:
+To animate multiple canvases in lock-step, one could do this, for example:
  
 ```
 function animationLoop() {
@@ -116,37 +129,33 @@ For occasional update use cases, it is just a matter of ignoring the promise ret
 
 An OffscreenCanvas object has a ''pendingFrame'' internal slot that stores a reference to the frame that was captured by the last call to commit(). The reference is held until the frame is actually committed. 'pendingFrame' is initially unset.
 
-An OffscreenCanvas object has a ''pendingPromise'' internal slot that stores a reference to the promise that was returned by the last call to commit(). [[pendingPromise]] is initially unset, and its reference is only retained while the promise is in the unresolved state.
+An OffscreenCanvas object has a ''pendingPromise'' internal slot that stores a reference to the promise that was returned by the last call to commit(). ''pendingPromise'' is initially unset, and its reference is only retained while the promise is in the unresolved state.
 
 The ''BeginFrame'' signal is a signal that is dispatched by the UserAgent to a specific OffscreenCanvas when it is time to render the next animation frame for the OffscreenCanvas.
 
 When commit() is called:
 * Let ''frame'' be a copy of the current contents of the canvas.
-* If ''pendingPromise'' is set, then run theses substeps:
-    * Set ''pendingFrame'' to be a reference to ''frame''.
-    * Return ''pendingPromise''.
+* Set the OffscreenCanvas object's ''pendingFrame'' to be a reference to ''frame''.
+* If ''pendingPromise'' is set, then return ''pendingPromise''.
 * Set ''pendingPromise'' to be a newly created unresolved promise object.
-* Run the steps to '''commit a frame''', passing ''frame'' as an argument.
+* Schedule the steps to '''commit a frame''' for this OffscreenCanvas at the end of the current task (to be executed before returning control to the event loop).
 * Return ''pendingPromise''.
 
 When the ''BeginFrame'' signal is to be dispatched to an OffscreenCanvas object, the UserAgent must queue a task on the OffscreenCanvas object's event loop that runs the following steps: 
-* If ''pendingFrame'' is set, then run the following substeps:
-    * Run the steps to '''commit a frame''', passing [[pendingFrame]] as an argument.
-    * Unset ''pendingFrame''.
-    * Abort these steps.
-* If ''pendingPromise'' is not set then abort these steps.
-* Resolve the promise referenced by ''pendingPromise''.
+* If the OffscreenCanvas object's ''pendingFrame'' is set, then run the following substeps:
+    * Run the steps to '''commit a frame''' for the OffscreenCanvas object.
+    * Return.
+* If ''pendingPromise'' is not set then return.
+* Resolve the promise referenced by the OffscreenCanvas object's ''pendingPromise''.
 * Unset ''pendingPromise''.
 
 When the user agent is required to run the steps to '''commit a frame''', it must do what is currently spec'ed as the steps for commit().
 
+When commit() is called on multiple OffscreenCanvas objects during the same task, the multiple '''commit a frame''' steps that are scheduled at the end of the task must be executed atomically, such that committed frames that are to be displayed on the same device are guaranteed to appear on the display during the same display refresh cycle.
+
 This processing model takes care the unresolved issues with the OffscreenCanvas.requestAnimationFrame solution because it makes it safe to call commit at any time by providing the following guarantees:
 * In cases of overdraw (commit() called at a rate higher than can be displayed), frames may be dropped to ensure low latency (no more than one frame of backlog).
 * The frame captured by the last call to commit after the end of an animation sequence is never dropped. In other words, when animation stops, it is always the most recent frame that is displayed.
-
-#### Adoption
-
-The idea of the commit API was discussed at a meeting of the WebVR working group and has support from multiple browser vendors.
 
 ### Document history
 
