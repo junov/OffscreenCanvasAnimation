@@ -1,4 +1,4 @@
-# Offscreen Animation Canvas Proposals
+# OffscreenCanvas Animation Proposals
 
 This proposal aims to provide a reliable mechanism for driving animations using OffscreenCanvas in a Worker''
 
@@ -138,7 +138,7 @@ When commit() is called:
 * Set the OffscreenCanvas object's ''pendingFrame'' to be a reference to ''frame''.
 * If ''pendingPromise'' is set, then return ''pendingPromise''.
 * Set ''pendingPromise'' to be a newly created unresolved promise object.
-* Schedule the steps to '''commit a frame''' for this OffscreenCanvas at the end of the current task (to be executed before returning control to the event loop).
+* Create a commit task that runs the steps to '''commit a frame''' for this OffscreenCanvas and add the newly created task to a global ''commit queue''. There is a single global ''commit queue'' per event loop. The tasks in the ''commit queue'' are to be executed, and the queue flushed, at the end of each script task (to be executed before returning control to the event loop), and whenever the "await" statement is invoked. 
 * Return ''pendingPromise''.
 
 When the ''BeginFrame'' signal is to be dispatched to an OffscreenCanvas object, the UserAgent must queue a task on the OffscreenCanvas object's event loop that runs the following steps: 
@@ -151,9 +151,9 @@ When the ''BeginFrame'' signal is to be dispatched to an OffscreenCanvas object,
 
 When the user agent is required to run the steps to '''commit a frame''', it must do what is currently spec'ed as the steps for commit().
 
-When commit() is called on multiple OffscreenCanvas objects during the same task, the multiple '''commit a frame''' steps that are scheduled at the end of the task must be executed atomically, such that committed frames that are to be displayed on the same device are guaranteed to appear on the display during the same display refresh cycle.
+When the tasks in a commit queue are executed, if there are multiple pending commits, they must all be executed atomically, such that committed frames that are displayed on the same device are guaranteed to appear on the display during the same display refresh cycle.
 
-This processing model takes care the unresolved issues with the OffscreenCanvas.requestAnimationFrame solution because it makes it safe to call commit at any time by providing the following guarantees:
+This processing model takes care of the unresolved issues with the OffscreenCanvas.requestAnimationFrame solution because it makes it safe to call commit at any time by providing the following guarantees:
 * In cases of overdraw (commit() called at a rate higher than can be displayed), frames may be dropped to ensure low latency (no more than one frame of backlog).
 * The frame captured by the last call to commit after the end of an animation sequence is never dropped. In other words, when animation stops, it is always the most recent frame that is displayed.
 
