@@ -5,12 +5,11 @@ This proposal aims to provide a reliable mechanism for driving animations using 
 ## Use Case Description
 
 1. An OffscreenCanvas is used in a worker to produce an animation sequence. The animation frames are propagated via commit() to a placeholder canvas element that is in a visible document.
-2. An OffscreenCanvas is used in a worker to produce an animation sequence. The web application displays multiple views of a 3D scene. To avoid resource duplication, all views must be rendered from the same WebGL context.  Therefore, a maximum of one view can be propagated via commit(), and the other views need to use transferToImageBitmap() to acquire snapshots for the different views.
-3. The same as use case 2, except that the updates of the different views need to be in sync. Therefore, all views must use transferToImageBitmap + postMessage + transferFromImageBitmap
-4. An OffscreenCanvas is used in a worker to produce an animation sequence that is displayed to a WebVR device.
-5. An OffscreenCanvas is used in a worker to produce an animation sequence that is displayed simultaneously to a WebVR device and to a placeholder canvas element that is in a visible document. The VR device and the main display run at different refresh rates.
-6. An OffscreenCanvas is used to perform non-graphics computations (e.g. physics simulation) that need to run at the same rate as display refresh because the results of the computation are consumed to drive an animation on the main thread
-7. An OffscreenCanvas is used to produce an animation sequence. The animation frames are propagated via commit() to a placeholder canvas that is in a document that is visible in a different window on a different display device from the window of the browsing context where the OffscreenCanvas object is used.  This may occur by transferring an OffscreenCanvas object via a MessageChannel.
+2. An OffscreenCanvas is used in a worker to produce an animation sequence. The web application displays multiple views of a 3D scene. To avoid resource duplication, all views must be rendered from the same WebGL context. The display updates of the different views may be required to be synchronised.
+3. An OffscreenCanvas is used in a worker to produce an animation sequence that is displayed to a WebVR device.
+4. An OffscreenCanvas is used in a worker to produce an animation sequence that is displayed simultaneously to a WebVR device and to a placeholder canvas element that is in a visible document. The VR device and the main display run at different refresh rates.
+5. An OffscreenCanvas is used to perform non-graphics computations (e.g. physics simulation) that need to run at the same rate as display refresh because the results of the computation are consumed to drive an animation on the main thread
+6. An OffscreenCanvas is used to produce an animation sequence. The animation frames are propagated via commit() to a placeholder canvas that is in a document that is visible in a different window on a different display device from the window of the browsing context where the OffscreenCanvas object is used.  This may occur by transferring an OffscreenCanvas object via a MessageChannel.
 
 Use Case Requirements:
 * Animation frames need to be produced at regular intervals that match the frame rate of the display device.
