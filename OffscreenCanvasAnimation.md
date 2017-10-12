@@ -1,6 +1,6 @@
 # OffscreenCanvas Animation Proposals
 
-This proposal aims to provide a reliable mechanism for driving animations using OffscreenCanvas in a Worker''
+This proposal aims to provide a reliable mechanism for driving animations using OffscreenCanvas in a Worker.
 
 ## Use Case Description
 
@@ -137,7 +137,7 @@ When commit() is called:
 * Set the OffscreenCanvas object's ''pendingFrame'' to be a reference to ''frame''.
 * If ''pendingPromise'' is set, then return ''pendingPromise''.
 * Set ''pendingPromise'' to be a newly created unresolved promise object.
-* Create a commit task that runs the steps to '''commit a frame''' for this OffscreenCanvas and add the newly created task to a global ''commit queue''. There is a single global ''commit queue'' per event loop. The tasks in the ''commit queue'' are to be executed, and the queue flushed, at the end of each script task (to be executed before returning control to the event loop), and whenever the "await" statement is invoked. 
+* Create a commit task that runs the steps to '''commit a frame''' for this OffscreenCanvas and add the newly created task to a global ''commit queue''. There is a single global ''commit queue'' per event loop. The tasks in the ''commit queue'' are to be executed, and the queue flushed, at the end of each script task (to be executed before returning control to the event loop), and whenever the "await" statement is invoked. When this commit task is created, ''pendingFrame'' is unset.
 * Return ''pendingPromise''.
 
 When the ''BeginFrame'' signal is to be dispatched to an OffscreenCanvas object, the UserAgent must queue a task on the OffscreenCanvas object's event loop that runs the following steps: 
