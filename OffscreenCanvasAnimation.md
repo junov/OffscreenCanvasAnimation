@@ -30,14 +30,6 @@ Another solution is to have a requestAnimationFrame loop in the browsing context
 
 ## Considered Solutions
 
-### WorkerGlobalScope.requestAnimationFrame
-
-This would replicate the behavior of window.requestAnimationFrame, but in a worker.
-
-#### Problems:
-* It is not clear which display device to synchronize with in this context, unlike with the window interface which represents a view that is displayed on a specific display device. In the case of a dedicated worker, we could assume that the display that the worker is connected to is the display of the window of the browsing context that owns the dedicated worker.  For shared workers however, relation to a display is less clear.
-* This approach would require adding the notion of a graphics update phase to the worker event loop processing model. It would be unfortunate to add this complexity to workers, which are not inherently designed for graphics.
-
 ### OffscreenCanvas.requestAnimationFrame
 
 Works much like window.requestAnimationFrame, except that the scheduling of callbacks is per object. This allows multiple Offscreen canvas objects in the same worker to be synchronized with different displays.  The display that the OffscreenCanvas would synchronize with is the device where its placeholder canvas is displayed.
@@ -76,8 +68,6 @@ Should it be possible to commit() the contents of other canvases from within a r
 The design of requestAnimationFrame was mean to allow multiple independent rendering loops in parallel which is why there is a notion of a callback list.  This aspect of the processing model is overkill in the case where requestAnimationFrame is per-object instead of global.
 
 For new async Web APIs, it is preferred to use Promises rather than callbacks.
-
-## Proposed Solution
 
 ### OffscreenCanvas.commit() to return a promise
 An alternate solution would be to have commit() return a promise that gets resolved when it is time to begin rendering the next frame.  This single API entry-point provides the necessary flexibility to handle continuous animations as well as sporadic updates.  Functionally, this API solves all the same use cases as OffscreenCanvas.requestAnimationFrame, with the following added benefits:
@@ -156,6 +146,93 @@ This processing model takes care of the unresolved issues with the OffscreenCanv
 * In cases of overdraw (commit() called at a rate higher than can be displayed), frames may be dropped to ensure low latency (no more than one frame of backlog).
 * The frame captured by the last call to commit after the end of an animation sequence is never dropped. In other words, when animation stops, it is always the most recent frame that is displayed.
 
-### Document history
+## Proposed Solution
+
+### AnimationFrameProvider Mixin
+
+The solution aims to provide a single requestAnimationFrame API that can be shared between `window`, `XRSession`, and workers. The main advantage of this approach is to provide a simple, less confusing, unified interface.
+
+```
+// The mix-in
+//============
+
+interface FrameRequestData {
+  // Empty base interface
+}
+
+callback FrameRequestCallback = void (DOMHighResTimeStamp, FrameRequestData);
+
+interface AnimationFrameProvider {
+  unsigned long requestAnimationFrame(FrameRequestCallback callback);
+  void cancelAnimationFrame(unsigned long handle);
+}
+
+// Window  (backwards compatible)
+//================================
+
+Window implements AnimationFrameProvider;
+
+// WebXR
+//=======
+
+XRSession implements AnimationFrameProvider;
+
+// This would replace the current XRPresentationFrame in the WebVR Explainer
+interface XRFrameRequestData : FrameRequestData {
+  readonly attribute XRSession session;
+  readonly attribute FrozenArray<XRView> views;
+
+  XRDevicePose? getDevicePose(XRCoordinateSystem coordinateSystem);
+}
+
+// Workers
+//=========
+
+WorkerGlobalScope implements AnimationFrameProvider;
+```
+
+#### Processing model
+* Window.requestAnimationFrame: Backward compatible, no change in behaviour except that the callback now receives a dummy
+  second argument.
+* Worker.requestAnimationFrame: Behavior similar to Window.requestAnimationFrame. The event loop processing model for worker global scope must be altered to contain "graphics update" step which is in sync with the same physical dispaly device as the Window object of the browsing context that created the Worker.  Once all the animation callbacks have been executed, the OffscreenCanvases that are linked to placeholder canvases may atomically update their respective contents on screen.
+* XRSession.requestAnimationFrame: synchronized with the XR device.
+
+#### Possible future additions
+
+Support could added for video. This would allow animations and captures to synchronize with a video's frame rate
+
+```
+// For Video
+
+HTMLVideoElement implememnts AnimationFrameProvider;
+
+interface HTMLVideoElementFrameRequestData : FrameRequestData {
+  // Useful to report some playback state here? (Already on element)
+  readonly attribute double currentTime;
+  readonly attribute unsigned long videoWidth;
+  readonly attribute unsigned long videoHeight;
+}
+```
+
+#### Issues
+* Does not support the use case of a continuously running task that produces frames repeatedly over time.  Not supporting this makes it inconvienient to port native application to the Web (e.g. via Emscripten) because the apps are often not deisigned for an asynchronous mode of operation.
+* Some of the more ambitious use cases for OffscreenCanvas also require SharedArrayBuffer.  SharedArrayBuffer was unshipped due to a security vulnerability (i.e. Spectre) but is like to be relaunched in a different form.  One of the proposed solutions is to re-introduce them with out-of-process SharedWorkers. The current proposal for AnimationFrameProvider does not yet address this.
+* The worker global scope's implicitly associated display device may not correspond to the display device that an OffscreenCanvas in the Worker is presenting to, especially if we expose OffscreenCanvas in SharedWorker.  This could be solved with the following API, which may not be a necessary for initial launch of OffscreenCanvas:
+
+```
+partial interface Window {
+  // Terrible name alert! Ideally something more palatable.
+  TranferrableAnimationFrameProvider getTransferrableAnimationFrameProvider();
+}
+
+[Transferrable]
+interface TranferrableAnimationFrameProvider : AnimationFrameProvider {
+  // Anything else useful/necessary here?
+}
+```
+
+### Document history and sources
 
 This document was forked from a [proposal](https://wiki.whatwg.org/wiki/OffscreenCanvas.requestAnimationFrame) that was first posted to the WHATWG wiki, which incorporated feedback from the associated [thread](https://github.com/whatwg/html/issues/2139) on the WHATWG Github issue tracker.
+
+The proposed solution incorporates ideas that were first posted to the W3C TAG review, found here: https://github.com/w3ctag/design-reviews/issues/141
