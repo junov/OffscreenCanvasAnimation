@@ -49,7 +49,7 @@ For OffscreenCanvases, the user agent will schedule an "animation task" to run a
 * Attempting to transfer an OffscreenCanvas object with a non-empty animation callback list throws an InvalidStateError.
 * Attempting to construct a VRLayer using an OffscreenCanvas object with a non-empty animation callback list throws an InvalidStateError.
 * When the OffscreenCanvas is associated with a VRLayer, all calls to {request|cancel}AnimationFrame must be forwarded to the VRLayer's VRDisplay's {request|cancel}AnimationFrame methods.  This implies that when the OffscreenCanvas simultaneously is visible through a placeholder canvas and a VR device, the animation loop is driven by the VR device.
-* The animations tasks for different OffscreenCanvas objects that live in the same event loop are not necessarily synchronized. 
+* The animations tasks for different OffscreenCanvas objects that live in the same event loop are not necessarily synchronized.
 
 #### Issues
 Calling commit() on a given OffscreenCanvas multiple times in the same animation frame is problematic.  Possible way of handling the situation:
@@ -63,7 +63,7 @@ What to do if commit() is not called from within the animation callback?  This i
 * Schedule the next animation frame immediately.
 * Prevent this from ever happening: Let OffscreenCanvas object have a needsCommit flag that is initially false. Set needsCommit to true at the beginning of an animation task. Set needsCommit to false when commit is called. When requestAnimationFrame is called, throw an exception if needsCommit is true.
 
-Should it be possible to commit() the contents of other canvases from within a rAF callback? 
+Should it be possible to commit() the contents of other canvases from within a rAF callback?
 
 The design of requestAnimationFrame was mean to allow multiple independent rendering loops in parallel which is why there is a notion of a callback list.  This aspect of the processing model is overkill in the case where requestAnimationFrame is per-object instead of global.
 
@@ -103,7 +103,7 @@ async function animationLoop() {
 ```
 
 To animate multiple canvases in lock-step, one could do this, for example:
- 
+
 ```
 function animationLoop() {
   // draw stuff
@@ -130,7 +130,7 @@ When commit() is called:
 * Create a commit task that runs the steps to '''commit a frame''' for this OffscreenCanvas and add the newly created task to a global ''commit queue''. There is a single global ''commit queue'' per event loop. The tasks in the ''commit queue'' are to be executed, and the queue flushed, at the end of each script task (to be executed before returning control to the event loop), and whenever the "await" statement is invoked. When this commit task is created, ''pendingFrame'' is unset.
 * Return ''pendingPromise''.
 
-When the ''BeginFrame'' signal is to be dispatched to an OffscreenCanvas object, the UserAgent must queue a task on the OffscreenCanvas object's event loop that runs the following steps: 
+When the ''BeginFrame'' signal is to be dispatched to an OffscreenCanvas object, the UserAgent must queue a task on the OffscreenCanvas object's event loop that runs the following steps:
 * If the OffscreenCanvas object's ''pendingFrame'' is set, then run the following substeps:
     * Run the steps to '''commit a frame''' for the OffscreenCanvas object.
     * Return.
@@ -147,6 +147,8 @@ This processing model takes care of the unresolved issues with the OffscreenCanv
 * The frame captured by the last call to commit after the end of an animation sequence is never dropped. In other words, when animation stops, it is always the most recent frame that is displayed.
 
 ## Proposed Solution
+
+The proposed solution includes a *AnimationFrameProvider* mixin together with a *commit()* function available for the OffscreenCanvas contexts.
 
 ### AnimationFrameProvider Mixin
 
@@ -192,9 +194,8 @@ WorkerGlobalScope implements AnimationFrameProvider;
 ```
 
 #### Processing model
-* Window.requestAnimationFrame: Backward compatible, no change in behaviour except that the callback now receives a dummy
-  second argument.
-* Worker.requestAnimationFrame: Behavior similar to Window.requestAnimationFrame. The event loop processing model for worker global scope must be altered to contain "graphics update" step which is in sync with the same physical dispaly device as the Window object of the browsing context that created the Worker.  Once all the animation callbacks have been executed, the OffscreenCanvases that are linked to placeholder canvases may atomically update their respective contents on screen.
+* Window.requestAnimationFrame: Backward compatible, no change in behaviour except that the callback now receives a dummy second argument.
+* Worker.requestAnimationFrame: Behavior similar to Window.requestAnimationFrame. The event loop processing model for worker global scope must be altered to contain "graphics update" step which is in sync with the same physical display device as the Window object of the browsing context that created the Worker.  Once all the animation callbacks have been executed, the OffscreenCanvases that are linked to placeholder canvases may atomically update their respective contents on screen.
 * XRSession.requestAnimationFrame: synchronized with the XR device.
 
 #### Possible future additions
@@ -214,20 +215,38 @@ interface HTMLVideoElementFrameRequestData : FrameRequestData {
 }
 ```
 
-#### Issues
-* Does not support the use case of a continuously running task that produces frames repeatedly over time.  Not supporting this makes it inconvienient to port native application to the Web (e.g. via Emscripten) because the apps are often not deisigned for an asynchronous mode of operation.
+### OffscreenCanvas commit
+
+```
+interface OffscreenRenderingContext {
+  void commit();
+  readonly attribute OffscreenCanvas canvas;
+};
+
+interface OffscreenCanvasRenderingContext2D : OffscreenRenderingContext {};
+interface OffscreenWebGLRenderingContext : OffscreenRenderingContext, WebGLRenderingContext {};
+```
+
+#### The commit processing model
+
+When `commit()` is called, a copy of the frame is made and sent to the driver/display when appropriate. This function can return immediately or block. The UA can decide to queue a few frames before blocking to guarantee smoothness.
+
+
+#### Rationale
+* RAF allows for animations to be synced and support current rendering models on the web.
+* commit() supports the use case of a continuously running task that produces frames repeatedly over time, wihch enables the port of native application to the Web (e.g. via Emscripten).
 * Some of the more ambitious use cases for OffscreenCanvas also require SharedArrayBuffer.  SharedArrayBuffer was unshipped due to a security vulnerability (i.e. Spectre) but is like to be relaunched in a different form.  One of the proposed solutions is to re-introduce them with out-of-process SharedWorkers. The current proposal for AnimationFrameProvider does not yet address this.
+* The current commit() implementation doesn't allow for developers to control the smoothness/latency trade-off, i.e., there's no way to forcefully send a frame and wait for vsync. This will be addressed in a different spec.
 * The worker global scope's implicitly associated display device may not correspond to the display device that an OffscreenCanvas in the Worker is presenting to, especially if we expose OffscreenCanvas in SharedWorker.  This could be solved with the following API, which may not be a necessary for initial launch of OffscreenCanvas:
 
 ```
-partial interface Window {
+partial interface AnimationFrameProvider {
   // Terrible name alert! Ideally something more palatable.
   TranferrableAnimationFrameProvider getTransferrableAnimationFrameProvider();
 }
 
 [Transferrable]
 interface TranferrableAnimationFrameProvider : AnimationFrameProvider {
-  // Anything else useful/necessary here?
 }
 ```
 
