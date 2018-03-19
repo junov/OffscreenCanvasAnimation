@@ -229,12 +229,12 @@ interface OffscreenWebGLRenderingContext : OffscreenRenderingContext, WebGLRende
 
 #### The commit processing model
 
-When `commit()` is called, a copy of the frame is made and sent to the driver/display when appropriate. This function can return immediately or block. The UA can decide to queue a few frames before blocking to guarantee smoothness.
+When `commit()` is called, the frame is sent to display. This function will block until another frame can be started to render. The UA can decide to queue a few frames before blocking to guarantee smoothness.
 
 
 #### Rationale
 * RAF allows for animations to be synced and support current rendering models on the web.
-* commit() supports the use case of a continuously running task that produces frames repeatedly over time, wihch enables the port of native application to the Web (e.g. via Emscripten).
+* commit() supports the use case of a continuously running task that produces frames repeatedly over time, which enables the port of native application to the Web. This is particularly interesting for WebAssembly, since following an async model requires exiting and re-entering the WebAssembly scope.
 * Some of the more ambitious use cases for OffscreenCanvas also require SharedArrayBuffer.  SharedArrayBuffer was unshipped due to a security vulnerability (i.e. Spectre) but is like to be relaunched in a different form.  One of the proposed solutions is to re-introduce them with out-of-process SharedWorkers. The current proposal for AnimationFrameProvider does not yet address this.
 * The current commit() implementation doesn't allow for developers to control the smoothness/latency trade-off, i.e., there's no way to forcefully send a frame and wait for vsync. This will be addressed in a different spec.
 * The worker global scope's implicitly associated display device may not correspond to the display device that an OffscreenCanvas in the Worker is presenting to, especially if we expose OffscreenCanvas in SharedWorker.  This could be solved with the following API, which may not be a necessary for initial launch of OffscreenCanvas:
