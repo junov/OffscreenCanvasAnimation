@@ -219,7 +219,7 @@ interface HTMLVideoElementFrameRequestData : FrameRequestData {
 
 ```
 interface OffscreenRenderingContext {
-  void commit();
+  [exposed=WorkerGlobalScope] void commit();
   readonly attribute OffscreenCanvas canvas;
 };
 
