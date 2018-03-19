@@ -229,7 +229,7 @@ interface OffscreenWebGLRenderingContext : OffscreenRenderingContext, WebGLRende
 
 #### The commit processing model
 
-When `commit()` is called, the frame is sent to display. This function will block until another frame can be started to render. The UA can decide to queue a few frames before blocking to guarantee smoothness.
+When `commit()` is called, the frame is sent to display. This function will block until another frame can be started to render. The UA can decide to queue a few frames before blocking for smoothness.
 
 
 #### Rationale
