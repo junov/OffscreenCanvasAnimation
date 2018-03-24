@@ -10,6 +10,7 @@ This proposal aims to provide a reliable mechanism for driving animations using 
 4. An OffscreenCanvas is used in a worker to produce an animation sequence that is displayed simultaneously to a WebVR device and to a placeholder canvas element that is in a visible document. The VR device and the main display run at different refresh rates.
 5. An OffscreenCanvas is used to perform non-graphics computations (e.g. physics simulation) that need to run at the same rate as display refresh because the results of the computation are consumed to drive an animation on the main thread
 6. An OffscreenCanvas is used to produce an animation sequence. The animation frames are propagated via commit() to a placeholder canvas that is in a document that is visible in a different window on a different display device from the window of the browsing context where the OffscreenCanvas object is used.  This may occur by transferring an OffscreenCanvas object via a MessageChannel.
+7. An OffscreenCanvas is used to get image data from both the total duration of a single video file and specific time slices of multiple video files, (potentially) faster than real-time, without propagating frames to a placeholder canvas element in a visible document. It does not render the image data to a display device, but instead renders as quickly as possible, fulfilling the returned promise with the rendered result as an ArrayBuffer.
 
 Use Case Requirements:
 * Animation frames need to be produced at regular intervals that match the frame rate of the display device.
